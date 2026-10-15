@@ -129,7 +129,12 @@ export function createDustOAuth(api: LoginApi = DEFAULT_API): DustOAuthRegistrat
       return {
         mode: 'auto',
         url: device.verificationUriComplete,
-        instructions: `Approve the code ${device.userCode} in your browser.`,
+        // opencode opens `url` itself, which fails where there is no browser
+        // to open (a container, a remote shell); the address must then be
+        // readable here, so the human can paste it into one elsewhere.
+        instructions:
+          `Open ${device.verificationUriComplete} and approve the code ${device.userCode}` +
+          ` (or enter it at ${device.verificationUri}).`,
         expiresAt: Date.now() + device.expiresIn * 1000,
         callback,
       }

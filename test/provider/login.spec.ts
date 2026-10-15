@@ -47,6 +47,13 @@ describe('createDustOAuth', () => {
     expect(authorization.expiresAt).toBeGreaterThan(Date.now())
   })
 
+  it('spells out where to go, for when no browser can be opened (e.g. in a container)', async () => {
+    const authorization = await createDustOAuth(api()).authorize({})
+
+    expect(authorization.instructions).toContain(DEVICE.verificationUriComplete)
+    expect(authorization.instructions).toContain(DEVICE.verificationUri)
+  })
+
   it('stores the grant with its region and the only workspace the user has', async () => {
     const authorization = await createDustOAuth(api()).authorize({})
     if (authorization.mode !== 'auto') throw new Error('expected auto mode')
