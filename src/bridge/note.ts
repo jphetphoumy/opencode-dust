@@ -56,6 +56,12 @@ export function bridgeNote(tools: readonly string[], codeMode?: CodeModeOffer): 
     ` with \`timeoutMs: ${String(BASH_TIMEOUT_MS)}\`, to run \`${helper} <<'EOF'\` followed by the request and \`EOF\`.`,
     ' It runs on the developer\'s machine through their own tools and permissions, and prints the result in the same call.',
     '\n\n',
+    // Without these two lines an agent that does not hold `bash` yet goes for
+    // the pod's file tools instead, finds only the helper, and lists and reads
+    // it again and again.
+    'That `bash` tool comes with your Computer skill: if you do not have it yet, enable it first with `enable_skill` ("Computer").',
+    ' The pod\'s own file tools (listing, reading or searching the pod) see only the exchange, never the project: do not use them to look at the project, and do not read the helper — run it.',
+    '\n\n',
     'A request is a batch of tool calls, run in order and stopping at the first failure unless you add `"onError":"continue"`:',
     ' `{"calls":[{"tool":"read","arguments":{...}},{"tool":"shell","arguments":{"command":"npm test"}}]}`.',
     ` Available tools: ${tools.join(', ')}.`,

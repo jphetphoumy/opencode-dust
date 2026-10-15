@@ -47,13 +47,28 @@ describe('bridgeNote', () => {
   it('asks for a fresh name per request', () => {
     expect(note).toMatch(/never used/i)
   })
+
+  it('says the sandbox `bash` comes with the Computer skill, to enable first when missing', () => {
+    expect(note).toMatch(/Computer/)
+    expect(note).toMatch(/enable_skill/)
+  })
+
+  it('says the pod’s own file tools see only the exchange, never the project', () => {
+    expect(note).toMatch(/pod's own file tools/i)
+    expect(note).toMatch(/never the project/i)
+  })
+
+  it('says to run the helper, not read it', () => {
+    expect(note).toMatch(/do not read the helper/i)
+  })
 })
 
 describe('bridgeNote layout', () => {
   it('keeps its paragraphs apart, so the agent reads them as separate rules', () => {
     const note = bridgeNote(TOOLS, { catalog: '## Available tools\n- opencode (2 tools)' })
 
-    expect(note).toContain('in the same call.\n\nA request is a batch')
+    expect(note).toContain('in the same call.\n\nThat `bash` tool')
+    expect(note).toContain('run it.\n\nA request is a batch')
     expect(note).toContain('refused unread.\n\nEach request costs')
     expect(note).toContain('project\'s files.\n\nOther tools')
     expect(note).toContain('do not guess tool names.\n\n## Available tools')
