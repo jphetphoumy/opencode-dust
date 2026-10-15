@@ -24,6 +24,7 @@ import {
   settleNativeOutcome,
   type BridgeCallContext,
 } from './registry.ts'
+import { buildRoutes, routeCall, type RoutableTool, type Routes } from './routes.ts'
 import { createToolRunner, type RunnableTool } from './runner.ts'
 
 /**
@@ -39,6 +40,8 @@ const NOT_BRIDGED = new Set(['execute', 'question', 'subagent', 'websearch', 'we
 export interface ConnectedBridge {
   readonly spaceId: string
   readonly manager: BridgeManager
+  /** Each session's routes, from the tools its latest request carried. */
+  readonly routes: Map<string, Routes>
   readonly deliver: (sessionID: string, text: string) => Promise<void>
   readonly dispose: () => void
 }
@@ -83,6 +86,7 @@ export async function connectBridge(
   const runTool = createToolRunner({
     tools: async () => (await context.tool.list()) as unknown as readonly RunnableTool[],
   })
+  const routes = new Map<string, Routes>()
   const manager = new BridgeManager({
     pod: {
       list: () => listPodFiles(api, pod.sId),
@@ -90,7 +94,14 @@ export async function connectBridge(
       write: (path, contents) => uploadPodFile(api, pod.sId, path, contents),
       remove: path => deletePodFile(api, pod.sId, path),
     },
-    native: { sink: nativeSink, result: awaitNativeOutcome },
+    native: {
+      sink: nativeSink,
+      result: awaitNativeOutcome,
+      route: (call, sessionID) => {
+        const known = routes.get(sessionID)
+        return known === undefined ? { kind: 'native', call } : routeCall(known, call)
+      },
+    },
     runTool: async (call, turn, signal) => {
       const outcome = await runTool(call, turn, signal)
       debug('bridge.call', {
@@ -113,6 +124,7 @@ export async function connectBridge(
   return {
     spaceId: pod.sId,
     manager,
+    routes,
     deliver,
     dispose: () => {
       manager.dispose()
@@ -142,6 +154,8 @@ export function bridgeContextHook(
   bridge: () => Promise<ConnectedBridge | undefined>,
 ): (event: {
   readonly sessionID: string
+  readonly system?: readonly { readonly type: string; readonly text?: string }[]
+  readonly messages?: readonly { readonly role?: string; readonly content?: unknown }[]
   tools: Record<string, { description: string; input: unknown }>
   options: Record<string, unknown>
 }) => Promise<void> {
@@ -151,30 +165,81 @@ export function bridgeContextHook(
     const running = await bridge()
     debug('hook.context', {
       sessionID: event.sessionID,
-      tools: Object.keys(definitions).length,
+      tools: Object.keys(definitions),
       bridged: running?.spaceId ?? null,
     })
     if (running === undefined) return
 
-    // Named from the registry rather than from the request: with code mode on,
-    // the request carries only `execute`, and the tools behind it are what the
-    // agent needs to know about. The request's JSON schemas win where present.
-    const tools = (await context.tool.list()) as unknown as readonly (RunnableTool & { input?: unknown })[]
-    const signatures = toolSignatures(
-      tools
-        .filter(tool => !NOT_BRIDGED.has(tool.id))
-        .map(tool => {
-          const schema = definitions[tool.id]?.input ?? tool.input
-          return { name: tool.id, ...(isJsonSchema(schema) ? { parameters: schema } : {}) }
-        }),
-    )
+    const tools = (await context.tool.list()) as unknown as readonly (RunnableTool &
+      RoutableTool & { input?: unknown })[]
+    running.routes.set(event.sessionID, buildRoutes(tools, new Set(Object.keys(definitions))))
 
+    // Only what this request carries: the registry also lists tools the
+    // session's permissions withhold, and an agent offered one calls it and
+    // gets "Unknown tool" back. Code-mode tools are not in the request by
+    // name; the session's own catalog speaks for them.
+    const signatures = toolSignatures(
+      Object.entries(definitions)
+        .filter(([name]) => !NOT_BRIDGED.has(name))
+        .map(([name, definition]) => ({
+          name,
+          ...(isJsonSchema(definition.input) ? { parameters: definition.input } : {}),
+        })),
+    )
+    const catalog = 'execute' in definitions ? codeModeCatalog(event) : undefined
+
+    debug('hook.codemode', { sessionID: event.sessionID, catalog: catalog === undefined ? null : catalog.split('\n').length })
     event.options[BRIDGE_OPTION] = {
       sessionID: event.sessionID,
       spaceId: running.spaceId,
-      note: bridgeNote(signatures),
+      note: bridgeNote(signatures, catalog === undefined ? undefined : { catalog }),
     } satisfies BridgeCallContext
   }
+}
+
+/** A request's text, as far as finding the catalog in it goes. */
+interface CatalogSource {
+  readonly system?: readonly { readonly type: string; readonly text?: string }[]
+  readonly messages?: readonly { readonly role?: string; readonly content?: unknown }[]
+}
+
+/** The texts of a system message's content. */
+function messageTexts(content: unknown): string[] {
+  if (typeof content === 'string') return [content]
+  if (!Array.isArray(content)) return []
+  return content.flatMap(part => {
+    const text = (part as { text?: unknown }).text
+    return typeof text === 'string' ? [text] : []
+  })
+}
+
+/**
+ * The session's code-mode catalog, as opencode wrote it into the instructions.
+ *
+ * opencode keeps instructions as system entries, in the system prompt or in
+ * the history, and announces a changed catalog with a new entry that
+ * supersedes the old one — so the last one found is the one that holds.
+ * @param request - the request's system parts and messages.
+ * @returns the `## Available tools` section, or nothing when there is none.
+ */
+export function codeModeCatalog(request: CatalogSource): string | undefined {
+  const texts = [
+    ...(request.system ?? []).map(part => part.text ?? ''),
+    ...(request.messages ?? []).flatMap(message => (message.role === 'system' ? messageTexts(message.content) : [])),
+  ]
+
+  let found: string | undefined
+  for (const text of texts) {
+    const section = text.lastIndexOf('# Code Mode')
+    if (section === -1) continue
+    const start = text.indexOf('## Available tools', section)
+    if (start === -1) continue
+    // The section runs to the next top-level heading: whatever follows is
+    // other instructions, which Dust already has from the system prompt.
+    const next = text.slice(start).search(/\n# /)
+    found = (next === -1 ? text.slice(start) : text.slice(start, start + next)).trim()
+  }
+  return found
 }
 
 /** The text of a tool event's content, files named rather than inlined. */
@@ -215,12 +280,12 @@ export function followSessionEvents(
           const failed = event.type === 'session.tool.failed'
           const error = (data['error'] as { message?: unknown } | undefined)?.message
           const text = contentText(data['content'])
-          settleNativeOutcome(id, {
+          const settled = settleNativeOutcome(id, {
             output: failed ? [typeof error === 'string' ? error : 'The tool call failed.', text].filter(Boolean).join('\n') : text,
             isError: failed,
             durationMs: 0,
           })
-          debug('bridge.native', { id, failed })
+          if (settled) debug('bridge.native', { id, failed })
         }
         continue
       }

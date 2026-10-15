@@ -296,6 +296,44 @@ describe('BridgeManager through opencode’s own loop', () => {
     expect(pod.files.get('oc-bash/c1/step1.out')).toMatch(/status: failed[\s\S]*rejected permission/)
   })
 
+  it('sends the call opencode can run, as routed', async () => {
+    const loop = nativeLoop()
+    const pod = fakePod({ 'oc-bash/c1/step1.json': '{"calls":[{"tool":"opencode_list_mcp_resources","arguments":{}}]}' })
+    const route = vi.fn((call: PodToolCall) => ({
+      kind: 'native' as const,
+      call: { tool: 'execute', arguments: { code: `return await tools.opencode.list_mcp_resources(${JSON.stringify(call.arguments)})` } },
+    }))
+    const { bridge } = manager({ native: { ...loop.native, route } }, pod)
+    bridge.streamStarted('ses_1', 'c1')
+    bridge.stepStarted('ses_1', TURN)
+    loop.open('ses_1')
+
+    const polling = bridge.poll('ses_1')
+    await vi.waitFor(() => expect(loop.emitted).toHaveLength(1))
+    loop.settle(loop.emitted[0]!.id, '{"resources":[]}')
+    await polling
+
+    expect(loop.emitted[0]?.call).toEqual({
+      tool: 'execute',
+      arguments: { code: 'return await tools.opencode.list_mcp_resources({})' },
+    })
+  })
+
+  it('runs here a call opencode’s loop cannot carry', async () => {
+    const loop = nativeLoop()
+    const pod = fakePod({ 'oc-bash/c1/step1.json': '{"calls":[{"tool":"opencode_list_mcp_resources","arguments":{}}]}' })
+    const route = vi.fn((call: PodToolCall) => ({ kind: 'local' as const, call }))
+    const { bridge, options } = manager({ native: { ...loop.native, route } }, pod)
+    bridge.streamStarted('ses_1', 'c1')
+    bridge.stepStarted('ses_1', TURN)
+    loop.open('ses_1')
+
+    await bridge.poll('ses_1')
+
+    expect(loop.emitted).toHaveLength(0)
+    expect(vi.mocked(options.runTool).mock.calls[0]?.[0]).toEqual({ tool: 'opencode_list_mcp_resources', arguments: {} })
+  })
+
   it('runs the call itself when no Dust turn is streaming to carry it', async () => {
     const loop = nativeLoop()
     const pod = fakePod({ 'oc-bash/c1/step1.sh': 'ls' })

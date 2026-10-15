@@ -39,7 +39,40 @@ describe('bridgeNote', () => {
     expect(note).toMatch(/scratch/i)
   })
 
+  it('says a script needs --sh, and that the request is never a prompt', () => {
+    expect(note).toContain('--sh')
+    expect(note).toMatch(/not a prompt/i)
+  })
+
   it('asks for a fresh name per request', () => {
     expect(note).toMatch(/never used/i)
+  })
+})
+
+describe('bridgeNote with opencode’s code mode', () => {
+  const CATALOG = [
+    '## Available tools',
+    '- opencode (2 tools)',
+    '  - tools.opencode.list_mcp_resources({ server?: string })',
+    '- browser (40 tools, 0 shown)',
+  ].join('\n')
+
+  it('hands the agent the session’s own code-mode catalog, not a guess at it', () => {
+    const note = bridgeNote(TOOLS, { catalog: CATALOG })
+
+    expect(note).toContain('tools.opencode.list_mcp_resources({ server?: string })')
+    expect(note).toContain('- browser (40 tools, 0 shown)')
+  })
+
+  it('shows how to reach a code-mode tool through execute, and to search before guessing', () => {
+    const note = bridgeNote(TOOLS, { catalog: CATALOG })
+
+    expect(note).toContain('{"tool":"execute","arguments":{"code":"return await tools.')
+    expect(note).toMatch(/search\(/)
+    expect(note).toMatch(/do not guess/i)
+  })
+
+  it('says nothing of code mode when the session offers none', () => {
+    expect(bridgeNote(TOOLS)).not.toContain('execute')
   })
 })

@@ -14,6 +14,7 @@ import { fetchModels, type DustModel } from './dust/models.ts'
 import { DUST_PROVIDER_ID, providerInfo, toOpencodeModels } from './provider/catalog.ts'
 import { createDustOAuth } from './provider/login.ts'
 import { createDust } from './provider/sdk.ts'
+import { routeCall } from './bridge/routes.ts'
 import { debug, describeError } from './debug.ts'
 import {
   bridgeContextHook,
@@ -36,6 +37,22 @@ const running = new Map<string, ConnectedBridge>()
  */
 export async function deliverForTest(spaceId: string, sessionID: string, text: string): Promise<void> {
   await running.get(spaceId)?.deliver(sessionID, text)
+}
+
+/**
+ * Test seam: how a running bridge would route a session's call.
+ * @param spaceId - the exchange pod.
+ * @param sessionID - the opencode session.
+ * @param call - the call as the agent wrote it.
+ * @returns the route, if the session has routes.
+ */
+export function routeForTest(
+  spaceId: string,
+  sessionID: string,
+  call: { tool: string; arguments: Record<string, unknown> },
+): unknown {
+  const routes = running.get(spaceId)?.routes.get(sessionID)
+  return routes === undefined ? undefined : routeCall(routes, call)
 }
 
 /**

@@ -57,15 +57,32 @@ describe('the helper the agent runs from its sandbox', () => {
     expect(result.stdout).toContain('hello')
   })
 
-  it('leaves anything that is not JSON as a .sh script', async () => {
-    const pending = run(['step2'], 'npm test\n', 1)
+  it('leaves a script only when asked for one with --sh', async () => {
+    await run(['step2', '--sh'], 'npm test\n', 1)
 
-    await pending
     expect(readFileSync(exchange('step2.sh'), 'utf8')).toBe('npm test\n')
   })
 
+  it('refuses text that is not a JSON batch, rather than running prose as a script', async () => {
+    const result = await run(['step2b'], 'List all configured MCP servers (and their resources).\n', 1)
+
+    expect(result.code).not.toBe(0)
+    expect(result.stdout).toMatch(/not a JSON batch/i)
+    expect(result.stdout).toContain('--sh')
+    expect(existsSync(exchange('step2b.sh'))).toBe(false)
+    expect(existsSync(exchange('step2b.json'))).toBe(false)
+  })
+
+  it('refuses a batch that is not valid JSON, so the agent fixes it before anything runs', async () => {
+    const result = await run(['step2c'], '{"calls":[{"tool":"read",}]}\n', 1)
+
+    expect(result.code).not.toBe(0)
+    expect(result.stdout).toMatch(/not valid JSON/i)
+    expect(existsSync(exchange('step2c.json'))).toBe(false)
+  })
+
   it('marks the request detached and says so when the answer takes too long', async () => {
-    const result = await run(['step3'], 'sleep 600\n', 1)
+    const result = await run(['step3', '--sh'], 'sleep 600\n', 1)
 
     expect(result.code).toBe(0)
     expect(existsSync(join(pod, detachedPath('conv1', 'step3')))).toBe(true)
@@ -86,7 +103,7 @@ describe('the helper the agent runs from its sandbox', () => {
     mkdirSync(join(pod, exchangeDir('conv1')), { recursive: true })
     writeFileSync(exchange('step4.out'), 'status: ok\n---\nold\n')
 
-    const result = await run(['step4'], 'ls\n', 1)
+    const result = await run(['step4', '--sh'], 'ls\n', 1)
 
     expect(result.code).not.toBe(0)
     expect(result.stdout).toMatch(/already used/i)
@@ -94,7 +111,7 @@ describe('the helper the agent runs from its sandbox', () => {
   })
 
   it('refuses a name the watcher would ignore', async () => {
-    const result = await run(['../escape'], 'ls\n', 1)
+    const result = await run(['../escape', '--sh'], 'ls\n', 1)
 
     expect(result.code).not.toBe(0)
     expect(existsSync(join(pod, 'escape.sh'))).toBe(false)

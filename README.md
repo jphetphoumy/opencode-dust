@@ -72,6 +72,11 @@ Dust agent ── sandbox bash (free) ──▶ /files/pod/oc-bash/<conversation
   time, because opencode starts every tool call of a step at once and a batch
   must stay in order. opencode then runs one follow-up step, which the provider
   answers empty, since the results already went back through the pod.
+- A tool behind opencode's **code mode** (MCP tools, `opencode_list_mcp_resources`,
+  `opencode_read_mcp_resource`…) is not a tool call of its own: it goes out
+  as `execute` running `tools.<namespace>.<name>(…)`, and shows as opencode's
+  execute card. If code mode is denied, so the request has no `execute`, it
+  runs directly instead.
 - With no Dust turn streaming (the helper gave up and the agent ended its
   turn), a call runs through the tool from `ctx.tool.list()` directly, with
   the same permission check but no card.

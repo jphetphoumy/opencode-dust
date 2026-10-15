@@ -89,13 +89,15 @@ interface NativeState {
   readonly waiting: Map<string, (outcome: NativeOutcome) => void>
   /** Outcomes reported before anyone asked for them. */
   readonly early: Map<string, NativeOutcome>
+  /** Calls already reported: every plugin instance follows the same events. */
+  readonly settled: Set<string>
 }
 
 const NATIVE_KEY = Symbol.for('opencode-dust.native')
 
 function native(): NativeState {
   const holder = globalThis as { [NATIVE_KEY]?: NativeState }
-  holder[NATIVE_KEY] ??= { sinks: new Map(), calls: new Map(), waiting: new Map(), early: new Map() }
+  holder[NATIVE_KEY] ??= { sinks: new Map(), calls: new Map(), waiting: new Map(), early: new Map(), settled: new Set() }
   return holder[NATIVE_KEY]
 }
 
@@ -142,6 +144,7 @@ export function isBridgedCall(id: string): boolean {
  */
 export function forgetBridgedCall(id: string): void {
   native().calls.delete(id)
+  native().settled.delete(id)
 }
 
 /**
@@ -163,11 +166,12 @@ export function awaitNativeOutcome(id: string): Promise<NativeOutcome> {
  * Report how a bridged call ended.
  * @param id - the tool call id.
  * @param outcome - its output and verdict.
- * @returns false when the id is not a bridged call.
+ * @returns false when the id is not a bridged call, or was already reported.
  */
 export function settleNativeOutcome(id: string, outcome: NativeOutcome): boolean {
   const state = native()
-  if (!state.calls.has(id)) return false
+  if (!state.calls.has(id) || state.settled.has(id)) return false
+  state.settled.add(id)
   const resolve = state.waiting.get(id)
   if (resolve === undefined) state.early.set(id, outcome)
   else {

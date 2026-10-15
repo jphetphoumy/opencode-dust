@@ -67,7 +67,10 @@ export function helperScript(): string {
   return `#!/usr/bin/env bash
 # opencode bridge: run work on the developer's machine and wait for the answer.
 # Usage: bash ${SANDBOX_POD_ROOT}/${HELPER_PATH} <name> <<'EOF'
-#        {"calls":[...]}      (a batch of tool calls)  or  shell commands (a script)
+#        {"calls":[...]}                       (a JSON batch of tool calls)
+#        EOF
+#    or: bash ${SANDBOX_POD_ROOT}/${HELPER_PATH} <name> --sh <<'EOF'
+#        shell commands                        (one script, run as one shell)
 #        EOF
 set -u
 root="\${OC_POD_ROOT:-${SANDBOX_POD_ROOT}}"
@@ -75,6 +78,7 @@ wait="\${OC_WAIT:-${String(HELPER_WAIT_SECONDS)}}"
 conversation="\${OC_CONVERSATION:-$(basename "$(readlink /files/conversation)" | sed 's/^conversation-//')}"
 dir="$root/${POD_BASH_DIR}/$conversation"
 name="\${1:-}"
+mode="\${2:-}"
 
 if ! [[ "$conversation" =~ ^[A-Za-z0-9_-]+$ ]]; then
   echo "error: this sandbox has no conversation mount at /files/conversation." >&2
@@ -97,10 +101,30 @@ if ! grep -q '[^[:space:]]' "$body"; then
   rm -f "$body"
   exit 2
 fi
-case "$(tr -d '[:space:]' < "$body" | head -c 1)" in
-  "{"|"[") kind=json ;;
-  *) kind=sh ;;
-esac
+if [ "$mode" = "--sh" ]; then
+  kind=sh
+else
+  # A batch is JSON or nothing: text that is not would otherwise run as a
+  # shell script, and prose run as a script is an error at best.
+  case "$(tr -d '[:space:]' < "$body" | head -c 1)" in
+    "{"|"[") kind=json ;;
+    *)
+      echo "error: the request is not a JSON batch, so nothing was sent. Send {\"calls\":[...]}, or shell commands with --sh. It is a request for the developer's tools, not a prompt." >&2
+      rm -f "$body"
+      exit 2
+      ;;
+  esac
+  if command -v jq > /dev/null; then valid() { jq -e . "$1" > /dev/null 2>&1; }
+  elif command -v python3 > /dev/null; then valid() { python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$1" 2> /dev/null; }
+  elif command -v node > /dev/null; then valid() { node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$1" 2> /dev/null; }
+  else valid() { true; }
+  fi
+  if ! valid "$body"; then
+    echo "error: the batch is not valid JSON, so nothing was sent; fix it and send it again under a new name." >&2
+    rm -f "$body"
+    exit 2
+  fi
+fi
 
 mkdir -p "$dir"
 cp "$body" "$dir/$name.$kind"

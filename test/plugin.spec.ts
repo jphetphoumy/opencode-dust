@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import plugin from '../server.ts'
 import { awaitNativeOutcome, bridgeListener, isBridgedCall, markBridgedCall } from '../src/bridge/registry.ts'
-import { deliverForTest, turnForTest } from '../src/plugin.ts'
+import { deliverForTest, routeForTest, turnForTest } from '../src/plugin.ts'
 import { DustLanguageModel } from '../src/provider/language-model.ts'
 import { DUST_OAUTH_METHOD_ID } from '../src/provider/login.ts'
 
@@ -41,6 +41,13 @@ function fakeContext(options: Record<string, unknown> = {}, credential?: unknown
         { id: 'read', input: { type: 'object', properties: { filePath: { type: 'string' } }, required: ['filePath'] }, execute: vi.fn() },
         { id: 'shell', input: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] }, execute: vi.fn() },
         { id: 'question', input: {}, execute: vi.fn() },
+        {
+          id: 'opencode_list_mcp_resources',
+          name: 'list_mcp_resources',
+          options: { namespace: 'opencode', codemode: true },
+          input: { type: 'object', properties: { server: { type: 'string' } } },
+          execute: vi.fn(),
+        },
         { id: 'execute', input: {}, execute: vi.fn() },
       ]),
     },
@@ -375,7 +382,6 @@ describe('dust plugin bridge', () => {
     expect(bridge.sessionID).toBe('ses_1')
     expect(bridge.spaceId).toBe('vlt_pod')
     expect(bridge.note).toContain('read(filePath)')
-    expect(bridge.note).toContain('shell(command)')
     expect(bridge.note).not.toContain('question(')
     expect(bridge.note).not.toContain('execute(')
     await (cleanup as (() => Promise<void>) | undefined)?.()
@@ -389,6 +395,67 @@ describe('dust plugin bridge', () => {
     const event = await firstDustRequest(hooks)
 
     expect(event.options).not.toHaveProperty('dustBridge')
+    await (cleanup as (() => Promise<void>) | undefined)?.()
+  })
+
+  it('routes a code-mode tool through execute, by what the session’s request carries', async () => {
+    fakeDustApi()
+    const { context, hooks } = fakeContext({}, LOGGED_IN)
+    const cleanup = await plugin.setup(context as never)
+    const event = {
+      sessionID: 'ses_1',
+      tools: { read: { description: '', input: {} }, execute: { description: '', input: {} } },
+      options: {} as Record<string, unknown>,
+    }
+    await hooks.find(entry => entry.name === 'context')?.callback(event as never)
+
+    expect(routeForTest('vlt_pod', 'ses_1', { tool: 'opencode_list_mcp_resources', arguments: { server: 'docs' } })).toEqual({
+      kind: 'native',
+      call: { tool: 'execute', arguments: { code: 'return await tools.opencode.list_mcp_resources({"server":"docs"})' } },
+    })
+    await (cleanup as (() => Promise<void>) | undefined)?.()
+  })
+
+  it('offers the request’s direct tools, and the session’s own code-mode catalog for the rest', async () => {
+    fakeDustApi()
+    const { context, hooks } = fakeContext({}, LOGGED_IN)
+    const cleanup = await plugin.setup(context as never)
+    const event = {
+      sessionID: 'ses_1',
+      system: [
+        { type: 'text', text: 'You are opencode.' },
+        {
+          type: 'text',
+          text: [
+            '# Code Mode',
+            '',
+            'Use the `execute` tool to call the tools listed below.',
+            '',
+            '## Available tools',
+            '- opencode (2 tools)',
+            '  - tools.opencode.list_mcp_resources({ server?: string })',
+            '',
+            '# Project instructions',
+            'Use tabs.',
+          ].join('\n'),
+        },
+      ],
+      tools: {
+        read: { description: '', input: { type: 'object', properties: { filePath: { type: 'string' } }, required: ['filePath'] } },
+        execute: { description: '', input: {} },
+      },
+      options: {} as Record<string, unknown>,
+    }
+    await hooks.find(entry => entry.name === 'context')?.callback(event as never)
+
+    const note = (event.options['dustBridge'] as { note: string }).note
+    expect(note).toContain('read(filePath)')
+    // Registered, but not in this request: not offered.
+    expect(note).not.toContain('shell(command)')
+    // Behind code mode: offered through the catalog, not as a direct call.
+    expect(note).not.toContain('opencode_list_mcp_resources(')
+    expect(note).toContain('tools.opencode.list_mcp_resources({ server?: string })')
+    expect(note).not.toContain('Use tabs.')
     await (cleanup as (() => Promise<void>) | undefined)?.()
   })
 

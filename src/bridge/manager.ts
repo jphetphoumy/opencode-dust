@@ -21,6 +21,7 @@ import { detachedPath, exchangeDir } from './helper.ts'
 import { POD_BASH_DIR, formatDelivery } from './pod-bash.ts'
 import type { BashOutcome } from './pod-bash.ts'
 import type { PodToolCall } from './pod-tool-request.ts'
+import type { Route } from './routes.ts'
 import type { ToolRunner } from './runner.ts'
 
 /** How long a session is still watched after its Dust turn ends. */
@@ -46,6 +47,11 @@ export interface NativeLoop {
   readonly sink: (sessionID: string) => { readonly emit: (call: PodToolCall) => string } | undefined
   /** How the tool call with this id ended, once opencode reports it. */
   readonly result: (id: string) => Promise<BashOutcome>
+  /**
+   * How opencode's loop can carry a call — see `routes.ts`. Absent sends
+   * every call as written.
+   */
+  readonly route?: (call: PodToolCall, sessionID: string) => Route
 }
 
 /** Everything the manager touches, injected so tests drive it directly. */
@@ -212,13 +218,14 @@ export class BridgeManager {
         remove: path => pod.remove(inward(path)),
         run: call => {
           const native = this.options.native
-          const sink = native?.sink(sessionID)
+          const route = native?.route?.(call, sessionID) ?? { kind: 'native', call }
+          const sink = route.kind === 'native' ? native?.sink(sessionID) : undefined
           if (native !== undefined && sink !== undefined && !abort.signal.aborted) {
-            return this.runNative(native, sink, call, abort.signal)
+            return this.runNative(native, sink, route.call, abort.signal)
           }
           const turn = this.turns.get(sessionID)
           return this.options.runTool(
-            call,
+            route.kind === 'local' ? route.call : call,
             turn === undefined ? undefined : { sessionID, ...turn },
             abort.signal,
           )
