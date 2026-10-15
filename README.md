@@ -4,24 +4,82 @@ An opencode v2 plugin that adds [Dust](https://dust.tt) workspace agents as a
 model provider, ported from `pi-dust-next`. The agent works on your machine
 through a free bridge in its own Computer sandbox; see *The bridge*.
 
-## Use
+## Requirements
 
-Add the plugin directory to your opencode config:
+- **opencode v2** (developed against 2.0.22). This is a v2 plugin; it does not
+  load in opencode 1.x.
+- A **Dust account** in a workspace that:
+  - has the `models_picker` feature, because every turn picks its model and
+    Dust answers HTTP 403 without it;
+  - keeps the **Computer** feature on (on by default), which the bridge's
+    sandbox runs on.
+
+Nothing to build: opencode runs the TypeScript sources directly, and the
+plugin has no runtime dependencies.
+
+## Install
+
+### From GitHub
+
+```sh
+opencode plugin add git+https://github.com/jphetphoumy/opencode-dust.git
+```
+
+This installs the plugin and adds it to your global opencode configuration.
+Update it later with `opencode plugin update`.
+
+### From a local clone
+
+Useful to hack on it, since opencode reloads a local plugin when its files
+change:
+
+```sh
+git clone https://github.com/jphetphoumy/opencode-dust.git ~/src/opencode-dust
+```
+
+Then list the directory in `~/.config/opencode/opencode.json` (or a project's
+`opencode.json`):
 
 ```json
 {
-  "plugins": ["/path/to/opencode-extension"]
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["/home/you/src/opencode-dust"]
 }
 ```
 
-Then log in:
+### Then
 
-```
-opencode auth login        # choose Dust, then approve the code in your browser
-```
+1. **Restart the background service** so it picks the plugin up:
 
-The login asks for a workspace (name or id). Leave it empty when you belong to
-only one.
+   ```sh
+   opencode service restart
+   ```
+
+2. **Log in to Dust:**
+
+   ```sh
+   opencode auth login        # choose Dust, then approve the code in your browser
+   ```
+
+   The login asks for a workspace (name or id). Leave it empty when you belong
+   to only one. The token is refreshed by opencode on its own.
+
+3. **Pick a model** from the `dust` provider, for example
+   `dust/anthropic:claude-sonnet-5`. The list is your workspace's catalog;
+   models with vision accept pasted images.
+
+On the first Dust turn in a project, the plugin creates a private pod named
+`opencode-<folder>` in your workspace. It holds only the bridge's exchange,
+never your code.
+
+### Troubleshooting
+
+- Everything the plugin does is traced, one JSON line per event, in
+  `~/.local/state/opencode-dust/debug.log`: login, pod, each request's hook,
+  each Dust turn, each bridged call and delivery.
+- After updating the plugin, run `opencode service restart`. opencode keeps a
+  provider it already loaded in memory until its token rotates.
+- Run `opencode auth login` again to switch workspaces.
 
 ## Model mapping
 

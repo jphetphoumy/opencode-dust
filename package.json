@@ -21,5 +21,23 @@
     "@types/node": "^24.10.1",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jphetphoumy/opencode-dust.git"
+  },
+  "homepage": "https://github.com/jphetphoumy/opencode-dust#readme",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "dust"
+  ],
+  "files": [
+    "server.ts",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
   }
 }
