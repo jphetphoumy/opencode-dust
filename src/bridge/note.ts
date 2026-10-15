@@ -33,13 +33,11 @@ export interface CodeModeOffer {
  */
 function codeModeSection(offer: CodeModeOffer): string {
   return [
-    '',
-    '',
+    '\n\n',
     'Other tools — MCP servers, the browser, and the like — live behind opencode\'s Code Mode and are only reachable through `execute`:',
     ' `{"tool":"execute","arguments":{"code":"return await tools.<path>({...})"}}`, with the path from the catalog below.',
     ' When the catalog is partial, find a tool first with `search(...)` inside `execute` (no `await`), and call it by the path it returns; do not guess tool names.',
-    '',
-    '',
+    '\n\n',
     offer.catalog.trim(),
   ].join('')
 }
@@ -57,21 +55,18 @@ export function bridgeNote(tools: readonly string[], codeMode?: CodeModeOffer): 
     ' To read, search, edit or run anything there, use your sandbox `bash` tool,',
     ` with \`timeoutMs: ${String(BASH_TIMEOUT_MS)}\`, to run \`${helper} <<'EOF'\` followed by the request and \`EOF\`.`,
     ' It runs on the developer\'s machine through their own tools and permissions, and prints the result in the same call.',
-    '',
-    '',
+    '\n\n',
     'A request is a batch of tool calls, run in order and stopping at the first failure unless you add `"onError":"continue"`:',
     ' `{"calls":[{"tool":"read","arguments":{...}},{"tool":"shell","arguments":{"command":"npm test"}}]}`.',
     ` Available tools: ${tools.join(', ')}.`,
     ' Separate calls do not share a shell; when a step needs one (a persistent `cd`, a heredoc), run the helper with `--sh` after the name and send plain shell commands: they run as one script.',
     ' The request is a request for the developer\'s tools, not a prompt: anything else is refused unread.',
-    '',
-    '',
+    '\n\n',
     'Each request costs a round-trip, whatever is in it, so put a whole step in one request: read the files you need together, make every edit and run the check in one batch.',
     ' Prefer `edit` and `write` over `sed`: they are exact where a shell rewrite is a guess.',
     ' `<name>` must be one you have never used in this conversation (`step1`, `step2`, …).',
     ` If the helper says the work is still running (after ${String(HELPER_WAIT_SECONDS)}s), end your turn at once and say you are waiting: the result is delivered to you as a message.`,
-    '',
-    '',
+    '\n\n',
     `Your sandbox stays yours for scratch work — Python, quick computations, drafts in \`/tmp\` — which costs nothing; just remember it never holds the project's files.`,
     codeMode === undefined ? '' : codeModeSection(codeMode),
   ].join('')

@@ -49,6 +49,17 @@ describe('bridgeNote', () => {
   })
 })
 
+describe('bridgeNote layout', () => {
+  it('keeps its paragraphs apart, so the agent reads them as separate rules', () => {
+    const note = bridgeNote(TOOLS, { catalog: '## Available tools\n- opencode (2 tools)' })
+
+    expect(note).toContain('in the same call.\n\nA request is a batch')
+    expect(note).toContain('refused unread.\n\nEach request costs')
+    expect(note).toContain('project\'s files.\n\nOther tools')
+    expect(note).toContain('do not guess tool names.\n\n## Available tools')
+  })
+})
+
 describe('bridgeNote with opencode’s code mode', () => {
   const CATALOG = [
     '## Available tools',
