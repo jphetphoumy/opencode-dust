@@ -1,0 +1,25 @@
+{
+  "name": "opencode-dust",
+  "version": "0.1.0",
+  "private": true,
+  "description": "opencode v2 plugin that adds Dust (dust.tt) workspace agents as a model provider.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./server": "./server.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run test",
+    "spike": "node --experimental-transform-types --no-warnings scripts/spike-pod-sandbox.ts"
+  },
+  "devDependencies": {
+    "@ai-sdk/provider": "3.0.8",
+    "@opencode/plugin": "2.0.22",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
