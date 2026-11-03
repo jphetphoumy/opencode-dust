@@ -80,18 +80,30 @@ export default {
     // once per process and keeps it: after a plugin reload it would go on
     // running the old model. The plugin is reloaded whole, so building the SDK
     // here is what makes an edit take effect without restarting the service.
+    // The login is read here too: since opencode 2.1 the core no longer
+    // forwards OAuth metadata to a custom AISDK provider, so `event.options`
+    // carries the token but not the workspace. The catalog read below keeps
+    // the same login; the SDK reuses it instead of guessing a workspace.
+    let login: { readonly key: string; readonly region: string; readonly workspaceId: string } | undefined
     await context.aisdk.hook(
       'sdk',
       event => {
         if (event.model.providerID !== DUST_PROVIDER_ID) return
-        event.sdk = createDust(event.options)
+        const options = event.options as Record<string, unknown>
+        const optionRegion = typeof options['region'] === 'string' && options['region'] !== '' ? options['region'] : undefined
+        const optionWorkspace =
+          typeof options['workspaceId'] === 'string' && options['workspaceId'] !== '' ? options['workspaceId'] : undefined
+        const region = login?.region ?? optionRegion ?? DUST_DEFAULT_REGION
+        const workspaceId = login?.workspaceId ?? optionWorkspace ?? ''
+        if (login !== undefined && (optionWorkspace !== login.workspaceId || optionRegion !== login.region)) {
+          debug('sdk.login', { region, workspaceId, fromOptions: optionWorkspace !== undefined })
+        }
+        event.sdk = createDust({ ...options, region, workspaceId })
       },
       { providerID: DUST_PROVIDER_ID },
     )
 
     let bridge: ConnectedBridge | undefined
-    /** The logged-in workspace the bridge is made for, once the catalog read one. */
-    let login: { readonly key: string; readonly region: string; readonly workspaceId: string } | undefined
     let connecting: Promise<ConnectedBridge | undefined> | undefined
     const stopBridge = (): void => {
       connecting = undefined
