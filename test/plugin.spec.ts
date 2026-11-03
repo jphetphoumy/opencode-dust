@@ -279,6 +279,49 @@ describe('dust plugin SDK', () => {
 
     expect(event.sdk).toBeUndefined()
   })
+
+  it('supplies the logged-in workspace when opencode no longer forwards OAuth metadata', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            models: [{ providerId: 'openai', modelId: 'gpt-5', displayName: 'GPT 5', isSelectable: true }],
+          }),
+        ),
+      ),
+    )
+    const { context, hooks } = fakeContext(
+      {},
+      {
+        type: 'oauth',
+        methodID: DUST_OAUTH_METHOD_ID,
+        access: 'tok',
+        refresh: 'r',
+        expires: Date.now() + 600_000,
+        metadata: { region: 'europe-west1', workspaceId: 'w1' },
+      },
+    )
+    await plugin.setup(context as never)
+
+    // Since opencode 2.1 the core only forwards the token to a custom AISDK
+    // provider; region/workspaceId no longer arrive in `event.options`.
+    const event = {
+      model: { providerID: 'dust', id: 'openai:gpt-5' },
+      package: 'file:///old/sdk.ts',
+      options: { apiKey: 'tok' },
+      sdk: undefined as unknown,
+    }
+    await hooks.find(entry => entry.name === 'aisdk.sdk')?.callback(event as never)
+
+    const model = (event.sdk as { languageModel: (id: string) => unknown }).languageModel('openai:gpt-5')
+    expect(model).toBeInstanceOf(DustLanguageModel)
+    expect((model as DustLanguageModel).settings).toMatchObject({
+      accessToken: 'tok',
+      region: 'europe-west1',
+      workspaceId: 'w1',
+    })
+  })
 })
 
 describe('dust plugin bridge', () => {
